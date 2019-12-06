@@ -34,9 +34,8 @@ public:
         if(count > 0)
         {
             m_character_count = std::move(count);
+            m_characters.clear();
         }
-
-        m_update = true;
     }
 
     /////////////////////////////////////////////////
@@ -136,7 +135,7 @@ private:
                 m_characters.back().setFillColor(m_body_color);
                 m_characters.back().setCharacterSize(m_character_size);
                 m_characters.back().setStyle(m_style);
-                m_characters.back().setPosition(0, m_characters.size() * m_character_bounds.y);
+                m_characters.back().setPosition(-m_characters.back().getLocalBounds().left, m_characters.size() * m_character_bounds.y - m_characters.back().getLocalBounds().top);
             }
 
             for(auto& character: m_characters)
@@ -173,11 +172,62 @@ private:
     sf::Vector2f            m_character_bounds = {0, 0};
     float                   m_character_count = 1;
     float                   m_character_size = 20;
-    float                   m_delay = 50;
+    float                   m_delay = 75;
     bool                    m_update = true;
     float                   m_delta = 0;
-
 };
+
+/////////////////////////////////////////////////
+void    load_rains(std::random_device& device, std::vector<Rain>& rains, const sf::Vector2f& rain_grid, const sf::Vector2u& window_size)
+{
+    std::mt19937 random_generator(device());
+
+    for(size_t position = 0; position < rain_grid.x * 1.5; ++position)
+    {
+        auto& rain = rains.emplace_back();
+
+        std::uniform_int_distribution<std::mt19937::result_type> distribution_count(2, 30);
+        rain.setCount(distribution_count(random_generator));
+
+        std::uniform_int_distribution<std::mt19937::result_type> distribution_horizontal_axis(0, rain_grid.x);
+        std::uniform_int_distribution<std::mt19937::result_type> distribution_vertical_axis(0, rain_grid.y);
+
+        float vertical_axis_position = 0;
+
+        if(position % 2 == 0)
+        {
+            vertical_axis_position = (distribution_vertical_axis(random_generator) - rain_grid.y / 2) * (window_size.y / rain_grid.y);
+        }
+        else
+        {
+            vertical_axis_position = distribution_vertical_axis(random_generator) * (window_size.y / rain_grid.y);
+        }
+
+        rain.setPosition(distribution_horizontal_axis(random_generator) * (window_size.x / rain_grid.x), vertical_axis_position);
+    }
+}
+
+/////////////////////////////////////////////////
+void    update_rain(std::random_device& device, std::vector<Rain>& rains, const sf::Vector2f& rain_grid, const sf::Vector2u& window_size, float delta_time)
+{
+    for(size_t position = 0; position < rains.size(); ++position)
+    {
+        rains[position].move(0, 3);
+        rains[position].update(device, delta_time);
+
+        if(rains[position].getPosition().y > window_size.y)
+        {
+            std::mt19937 random_generator(device());
+            std::uniform_int_distribution<std::mt19937::result_type> distribution_count(2, 30);
+            rains[position].setCount(distribution_count(random_generator));
+
+            std::uniform_int_distribution<std::mt19937::result_type> distribution_horizontal_axis(0, rain_grid.x);
+            std::uniform_int_distribution<std::mt19937::result_type> distribution_vertical_axis(0, rain_grid.y / 2);
+
+            rains[position].setPosition(distribution_horizontal_axis(random_generator) * (window_size.x / rain_grid.x), (distribution_vertical_axis(random_generator) - rain_grid.y / 1.5) * (window_size.y / rain_grid.y));
+        }
+    }
+}
 
 } // namespace helper
 
@@ -186,50 +236,42 @@ private:
 /////////////////////////////////////////////////
 int main()
 {
-    sf::RenderWindow window(sf::VideoMode(940, 680), "Brute Force weManhattan.06.30");
+    sf::RenderWindow window(sf::VideoMode(940, 680), "Brute Force weNorth.24.12");
     window.setFramerateLimit(60);
 
     sf::Shader shader;
-    if(!shader.loadFromFile("shaders/outline.frag", sf::Shader::Fragment))
-    {
-        std::cout << "Failed to load outline.frag shader (main.cpp: Rain::stylize)" << std::endl;
-    }
-
-    shader.setUniform("outline_thickness", 0.2f);
-    shader.setUniform("outline_colour", sf::Glsl::Vec3{100, 100, 100});
-    shader.setUniform("texture", sf::Shader::CurrentTexture);
+    shader.loadFromFile("shaders/outline.frag", sf::Shader::Fragment);
 
     std::random_device device;
-    sf::Vector2f grid;
 
-    {
-        helper::Rain temporary_rain;
-        temporary_rain.update(device, 0);
-        grid = {window.getSize().x / temporary_rain.getCharacterBounds().x, window.getSize().y / temporary_rain.getCharacterBounds().y};
-    }
+    helper::Rain reference_rain;
+    reference_rain.update(device, 0);
+    sf::Vector2f rain_grid = {window.getSize().x / reference_rain.getCharacterBounds().x, window.getSize().y / reference_rain.getCharacterBounds().y};
 
     std::vector<helper::Rain> rains;
-    float chance = 0.4;
+    helper::load_rains(device, rains, rain_grid, window.getSize());
 
-    for(size_t count = 0; count < grid.x; ++count)
-    {
-        std::mt19937 random_generator(device());
-        std::uniform_int_distribution<std::mt19937::result_type> distribution_chance(0, 100);
+    sf::Font font;
+    font.loadFromFile("fonts/matrix-code.ttf");
 
-        if(distribution_chance(random_generator) < 100 * chance)
-        {
-            rains.emplace_back();
+    sf::Text text_title("WELCOME", font, 64);
+    text_title.setFillColor({255, 255, 255, 150});
+    text_title.setPosition(window.getSize().x / 2 - text_title.getGlobalBounds().width / 2 - text_title.getLocalBounds().left, window.getSize().y / 2 - text_title.getGlobalBounds().height / 2 - text_title.getLocalBounds().top);
 
-            std::uniform_int_distribution<std::mt19937::result_type> distribution_vertical_axis(0, grid.y);
-            rains.back().setPosition(count * (window.getSize().x / grid.x), distribution_vertical_axis(random_generator) * (window.getSize().x / grid.x));
+    sf::Text text_login("L", font, 32);
+    text_login.setFillColor({200, 200, 200, 255});
+    text_login.setPosition(window.getSize().x / 2 - text_login.getGlobalBounds().width / 2 - text_login.getLocalBounds().left, text_title.getPosition().y + text_title.getGlobalBounds().height * 2 - text_login.getLocalBounds().top);
 
-            std::uniform_int_distribution<std::mt19937::result_type> distribution_count(2, 20);
-            rains.back().setCount(distribution_count(random_generator));
-        }
-    }
+    sf::Text text_password("", font, 32);
+    text_password.setFillColor({200, 200, 200, 255});
+    text_password.setPosition(window.getSize().x / 2 - text_password.getGlobalBounds().width / 2 - text_password.getLocalBounds().left, text_login.getPosition().y + text_login.getGlobalBounds().height * 2 - text_password.getLocalBounds().top);
 
-    sf::Clock clock;
-    float delta_time = 0;
+    sf::RectangleShape shape_cursor({2, text_login.getGlobalBounds().height});
+    text_login.setString("");
+
+    sf::Clock clock_cursor_blink;
+    sf::Clock clock_text_write;
+    sf::Clock clock_delta;
 
     while(window.isOpen())
     {
@@ -242,19 +284,53 @@ int main()
             }
         }
 
-        delta_time = clock.restart().asSeconds();
+        update_rain(device, rains, rain_grid, window.getSize(), clock_delta.restart().asSeconds());
 
-        for(auto& rain: rains)
+        std::string login_to_write = "LOGIN SANTA";
+        if(clock_text_write.getElapsedTime() > sf::milliseconds(300) && text_login.getString().getSize() < login_to_write.size())
         {
-            rain.update(device, delta_time);
+            text_login.setString(text_login.getString() + login_to_write[text_login.getString().getSize()]);
+            text_login.setPosition(window.getSize().x / 2 - text_login.getGlobalBounds().width / 2 - text_login.getLocalBounds().left, text_title.getPosition().y + text_title.getGlobalBounds().height * 2 - text_login.getLocalBounds().top);
+            shape_cursor.setPosition(text_login.getPosition().x + text_login.getGlobalBounds().width + shape_cursor.getSize().x, text_login.getPosition().y + text_login.getLocalBounds().top);
+
+            clock_text_write.restart();
+        }
+
+        std::string password_to_write = "PASSWORD HACK";
+        if(clock_text_write.getElapsedTime() > sf::milliseconds(300) && text_password.getString().getSize() < password_to_write.size() && text_login.getString().getSize() >= login_to_write.size())
+        {
+            text_password.setString(text_password.getString() + password_to_write[text_password.getString().getSize()]);
+            text_password.setPosition(window.getSize().x / 2 - text_password.getGlobalBounds().width / 2 - text_password.getLocalBounds().left, text_login.getPosition().y + text_login.getGlobalBounds().height * 2 - text_password.getLocalBounds().top);
+            shape_cursor.setPosition(text_password.getPosition().x + text_password.getGlobalBounds().width + shape_cursor.getSize().x, text_password.getPosition().y + text_login.getLocalBounds().top);
+
+            clock_text_write.restart();
+        }
+
+        if(clock_cursor_blink.getElapsedTime() > sf::milliseconds(200))
+        {
+            if(shape_cursor.getFillColor() == sf::Color::Transparent)
+            {
+                shape_cursor.setFillColor(sf::Color::White);
+            }
+            else
+            {
+                shape_cursor.setFillColor(sf::Color::Transparent);
+            }
+
+            clock_cursor_blink.restart();
         }
 
         window.clear();
+        window.draw(text_title);
 
         for(auto& rain: rains)
         {
             window.draw(rain, &shader);
         }
+
+        window.draw(text_login);
+        window.draw(text_password);
+        window.draw(shape_cursor);
 
         window.display();
     }
